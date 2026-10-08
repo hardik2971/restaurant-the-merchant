@@ -12,7 +12,9 @@
     "test:watch": "vitest",
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "start:local": "node scripts/start-local.mjs",
+    "tunnel": "node scripts/db-tunnel.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -46,6 +48,7 @@
     "@types/react-dom": "^19.2.3",
     "postcss": "^8.4.40",
     "prisma": "^6.19.3",
+    "ssh2": "^1.17.0",
     "tailwindcss": "^4.3.0",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
