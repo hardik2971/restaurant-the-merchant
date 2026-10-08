@@ -1,0 +1,424 @@
+// Restaurant Admin — Prisma schema (MySQL)
+// Phase 1: auth & RBAC. Later phases add Menu, Order, Reservation, Outlet, etc.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String // bcrypt hash
+  role      Role     @default(STAFF)
+  avatarUrl String?
+  outletId  String? // null = access to all outlets
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum Role {
+  OWNER
+  MANAGER
+  STAFF
+}
+
+model RestaurantProfile {
+  id        String   @id @default("default")
+  name      String
+  currency  String   @default("USD")
+  timezone  String   @default("America/New_York")
+  address   String?
+  phone     String?
+  email     String?
+  updatedAt DateTime @updatedAt
+}
+
+// Audit trail — every significant POS/table action is recorded here.
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String // "session.open", "session.close", "payment.add", "table.state"…
+  entity    String // "TableSession", "Payment", "Table", "Order"
+  entityId  String?
+  detail    String?  @db.Text
+  userId    String?
+  userName  String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entity])
+}
+
+// Manual overrides for dashboard widgets (TASK: editable Trending / Top
+// Categories). Null fields fall back to the auto-computed values.
+model DashboardConfig {
+  id             String   @id @default("default")
+  trendingItemId String? // menu item id featured as "Trending"; null = auto
+  topCategories  String?  @db.Text // JSON [{ name, percent }]; null = auto
+  updatedAt      DateTime @updatedAt @default(now())
+}
+
+model Category {
+  id     String     @id @default(cuid())
+  name   String     @unique
+  active Boolean    @default(true) // disabled categories are hidden from the public site
+  items  MenuItem[]
+}
+
+model MenuItem {
+  id          String      @id @default(cuid())
+  name        String
+  description String      @db.Text
+  price       Decimal     @db.Decimal(10, 2)
+  rating      Float       @default(0)
+  tag         String?
+  imageUrl    String      @db.Text
+  available   Boolean     @default(true)
+  outletId    String?
+  categoryId  String
+  category    Category    @relation(fields: [categoryId], references: [id])
+  orderItems  OrderItem[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([categoryId])
+}
+
+model Customer {
+  id           String         @id @default(cuid())
+  name         String
+  email        String         @unique
+  phone        String?
+  address      String?
+  password     String? // bcrypt hash — Customer app login (null = guest-only)
+  status       CustomerStatus @default(ACTIVE)
+  orders       Order[]
+  reservations Reservation[]
+  giftCards    GiftCard[]
+  sessions     TableSession[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt @default(now())
+}
+
+model GiftCard {
+  id            String              @id @default(cuid())
+  code          String              @unique // generated coupon code
+  kind          CouponKind          @default(GIFT_CARD)
+  customerName  String
+  customerEmail String
+  customerId    String?
+  customer      Customer?           @relation(fields: [customerId], references: [id])
+  amount        Decimal             @db.Decimal(10, 2)
+  message       String?             @db.Text
+  expiryDate    DateTime?
+  paymentStatus CouponPaymentStatus @default(PENDING)
+  paymentProvider   String? // razorpay | stripe
+  razorpayPaymentId String? // gateway payment reference
+  status        CouponStatus        @default(PENDING_PAYMENT)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt @default(now())
+
+  @@index([status])
+  @@index([customerId])
+}
+
+enum CouponKind {
+  GIFT_CARD
+  COUPON
+}
+
+enum CouponPaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+enum CouponStatus {
+  PENDING_PAYMENT
+  PAID
+  ACTIVE
+  REDEEMED
+  EXPIRED
+  CANCELLED
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Order {
+  id            String         @id @default(cuid())
+  number        String         @unique // e.g. ORD-1042
+  type          OrderType
+  status        OrderStatus    @default(PENDING)
+  channel       OrderChannel   @default(POS) // POS = in-house, ONLINE = website ordering
+  paymentMethod PaymentMethod?
+  paymentProvider   String? // razorpay | stripe (online gateway used)
+  razorpayPaymentId String? // gateway payment reference (Razorpay payment id / Stripe intent id)
+  total         Decimal        @db.Decimal(10, 2)
+  outletId      String
+  customerName  String
+  customerEmail String?
+  customerPhone String?
+  customerId    String?
+  customer      Customer?      @relation(fields: [customerId], references: [id])
+  // Online ordering — Take Away scheduling (TASK 1)
+  scheduleType  ScheduleType   @default(NOW) // NOW = ASAP, LATER = scheduled pickup
+  scheduleDate  DateTime? // pickup date when scheduleType = LATER
+  scheduleTime  String? // "18:30" pickup slot when scheduleType = LATER
+  notes         String?        @db.Text
+  // Table-wise QR ordering (TASK 5)
+  tableId       String?
+  table         Table?         @relation(fields: [tableId], references: [id])
+  tableNumber   String? // snapshot for the kitchen ticket
+  sessionId     String?
+  session       TableSession?  @relation(fields: [sessionId], references: [id])
+  items         OrderItem[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([customerId])
+  @@index([channel])
+  @@index([tableId])
+}
+
+model Table {
+  id        String         @id @default(cuid())
+  number    String         @unique // "1", "12", "Patio-3"
+  name      String? // "Window table"
+  code      String         @unique @default(cuid()) // QR token used in the order URL
+  capacity  Int            @default(4)
+  status    TableStatus    @default(ACTIVE) // ACTIVE/INACTIVE = QR ordering enabled
+  state     TableState     @default(AVAILABLE) // live operational state (floor plan)
+  orders    Order[]
+  sessions  TableSession[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt @default(now())
+
+  @@index([state])
+}
+
+enum TableStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum TableState {
+  AVAILABLE
+  RESERVED
+  OCCUPIED
+  WAITING_PAYMENT
+  CLEANING
+  OUT_OF_SERVICE
+}
+
+// A customer's visit at a table — the central record everything links to.
+model TableSession {
+  id            String        @id @default(cuid())
+  tableId       String
+  table         Table         @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  status        SessionStatus @default(OPEN)
+  openedAt      DateTime      @default(now())
+  closedAt      DateTime?
+  customerCount Int           @default(1)
+  customerName  String?
+  customerId    String?
+  customer      Customer?     @relation(fields: [customerId], references: [id])
+  waiterId      String?
+  waiter        Employee?     @relation(fields: [waiterId], references: [id])
+  notes         String?       @db.Text
+  // Billing (filled at invoice/payment time — Phase 2)
+  subtotal      Decimal       @default(0) @db.Decimal(10, 2)
+  discount      Decimal       @default(0) @db.Decimal(10, 2)
+  tax           Decimal       @default(0) @db.Decimal(10, 2)
+  serviceCharge Decimal       @default(0) @db.Decimal(10, 2)
+  tip           Decimal       @default(0) @db.Decimal(10, 2)
+  total         Decimal       @default(0) @db.Decimal(10, 2)
+  paymentMethod String?
+  paymentStatus String? // PENDING | PAID
+  orders        Order[]
+  payments      Payment[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt @default(now())
+
+  @@index([tableId])
+  @@index([status])
+}
+
+enum SessionStatus {
+  OPEN
+  CLOSED
+}
+
+// Partial / multiple payments against a session (split bills, mixed tender).
+model Payment {
+  id        String       @id @default(cuid())
+  sessionId String
+  session   TableSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  amount    Decimal      @db.Decimal(10, 2)
+  method    String
+  createdAt DateTime     @default(now())
+
+  @@index([sessionId])
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  name       String // snapshot at order time
+  qty        Int
+  price      Decimal  @db.Decimal(10, 2)
+
+  @@index([orderId])
+}
+
+enum OrderType {
+  DINE_IN
+  DELIVERY
+  PICKUP
+}
+
+enum OrderStatus {
+  PENDING
+  PREPARING
+  READY
+  COMPLETED
+  CANCELED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  ONLINE
+}
+
+enum OrderChannel {
+  POS
+  ONLINE
+}
+
+enum ScheduleType {
+  NOW
+  LATER
+}
+
+model Reservation {
+  id         String            @id @default(cuid())
+  reference  String            @unique // SV-xxxxxx / EV-xxxxxx
+  kind       ReservationKind
+  status     ReservationStatus @default(REQUESTED)
+  date       DateTime
+  // Contact
+  name       String
+  email      String
+  phone      String
+  // Table booking
+  time       String?
+  guests     Int?
+  occasion   String?
+  requests   String?           @db.Text
+  // Private event
+  eventType  String?
+  guestRange String?
+  space      String?
+  company    String?
+  message    String?           @db.Text
+  outletId   String?
+  customerId String?
+  customer   Customer?         @relation(fields: [customerId], references: [id])
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@index([status])
+  @@index([date])
+  @@index([customerId])
+}
+
+model InventoryItem {
+  id           String   @id @default(cuid())
+  name         String
+  category     String
+  unit         String // kg, L, units, bottles
+  quantity     Float    @default(0)
+  reorderLevel Float    @default(0)
+  costPerUnit  Decimal  @db.Decimal(10, 2)
+  supplier     String?
+  outletId     String?
+  updatedAt    DateTime @updatedAt
+
+  @@index([name])
+}
+
+model Employee {
+  id        String     @id @default(cuid())
+  name      String
+  role      String // "Manager", "Cashier", "Kitchen Staff", "Waiter", "Super Admin"
+  email     String?
+  phone     String?
+  password  String? // bcrypt hash — staff login (optional)
+  avatarUrl String?
+  active    Boolean    @default(true) // account active/inactive (TASK 3)
+  status    DutyStatus @default(OFF) // live duty status (dashboard gauge)
+  outletId  String
+  userId    String? // optional link to a login User
+  sessions  TableSession[] // tables this employee is waiting (POS)
+  createdAt DateTime   @default(now())
+
+  @@index([status])
+  @@index([active])
+}
+
+enum DutyStatus {
+  ON_DUTY
+  ON_BREAK
+  ABSENT
+  OFF
+}
+
+model Outlet {
+  id        String         @id @default(cuid())
+  name      String         @unique // "Outlet 05"
+  location  String?
+  address   String?
+  phone     String?
+  manager   String?
+  isActive  Boolean        @default(true)
+  metrics   OutletMetric[]
+  createdAt DateTime       @default(now())
+}
+
+model OutletMetric {
+  id              String   @id @default(cuid())
+  outletId        String
+  outlet          Outlet   @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  periodStart     DateTime
+  revenue         Decimal  @db.Decimal(12, 2)
+  operationalCost Decimal  @db.Decimal(12, 2)
+
+  @@index([outletId])
+}
+
+enum ReservationKind {
+  TABLE
+  PRIVATE_EVENT
+}
+
+enum ReservationStatus {
+  REQUESTED
+  CONFIRMED
+  SEATED
+  COMPLETED
+  CANCELED
+  NO_SHOW
+}

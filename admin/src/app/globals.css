@@ -1,0 +1,145 @@
+@import 'tailwindcss';
+
+/* Class-based dark mode (toggled by adding `.dark` on <html>). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ============================================================
+   ADMIN DESIGN SYSTEM — Tailwind v4 theme tokens
+   Palette mirrors the public site: warm ink / cream neutrals with
+   a gold accent (#e0a04b family). Semantic tokens below hold the
+   LIGHT theme values; the `.dark` block overrides the same custom
+   properties, so every `bg-surface` / `text-fg` / `text-accent`
+   utility re-themes automatically. Bright site-gold lives in
+   --color-gold; --color-accent is a slightly deeper gold that
+   stays legible with white button text in both modes.
+   ============================================================ */
+@theme {
+  /* ----- Surfaces (light) ----- */
+  --color-bg: #f4f1ea; /* app background — warm off-white */
+  --color-surface: #fffefb; /* cards / panels */
+  --color-surface-2: #f8f4ec; /* subtle inset */
+  --color-border: #e7e0d2;
+
+  /* ----- Text (light) ----- */
+  --color-fg: #17130f;
+  --color-fg-muted: #877c6c;
+
+  /* ----- Brand accent — gold (from the public site) ----- */
+  --color-accent: #c8812a; /* deep gold — CTAs, active nav, links */
+  --color-accent-soft: #f6ecd8;
+  --color-accent-deep: #a5661a;
+  --color-gold: #e0a04b; /* bright site gold — highlights, charts, rings */
+
+  /* ----- Status (light) ----- */
+  --color-success: #2e9e57;
+  --color-success-soft: #e6f4ea;
+  --color-danger: #d9483f;
+  --color-danger-soft: #fbe9e6;
+  --color-warn: #cf8a1e;
+  --color-warn-soft: #f9efd9;
+  --color-info: #3b7fe4;
+  --color-info-soft: #e8f0fe;
+
+  /* ----- Fonts (next/font sets the *-src vars on <html>) ----- */
+  --font-sans: var(--font-sans-src), system-ui, sans-serif;
+  --font-display: var(--font-display-src), Georgia, serif;
+
+  /* ----- Radius ----- */
+  --radius-card: 1rem;
+  --radius-pill: 999px;
+
+  /* ----- Shadows (light) ----- */
+  --shadow-card: 0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-pop: 0 12px 32px -12px rgba(16, 24, 40, 0.18);
+}
+
+/* ----- DARK theme — matches the public site (ink / cream / gold) -----
+   `html.dark` (unlayered, higher specificity than :root) reliably overrides
+   the @theme defaults regardless of Tailwind's cascade-layer ordering. */
+html.dark {
+  color-scheme: dark;
+
+  --color-bg: #141210; /* ink */
+  --color-surface: #1d1a17; /* ink-soft */
+  --color-surface-2: #26221d; /* ink-800 */
+  --color-border: #322c25;
+
+  --color-fg: #f7f1e8; /* cream */
+  --color-fg-muted: #a3998a;
+
+  --color-accent: #d69236; /* gold — legible with white button text on dark */
+  --color-accent-soft: #37301f; /* dark gold tint for chips */
+  --color-accent-deep: #f3c98b;
+  --color-gold: #e0a04b;
+
+  --color-success: #4fbd7c;
+  --color-success-soft: #16311f;
+  --color-danger: #f0766b;
+  --color-danger-soft: #3a1d1a;
+  --color-warn: #e6a93f;
+  --color-warn-soft: #362a13;
+  --color-info: #6aa5f5;
+  --color-info-soft: #1b2740;
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-pop: 0 16px 40px -12px rgba(0, 0, 0, 0.6);
+}
+
+:root {
+  color-scheme: light;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-bg text-fg font-sans antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply text-fg;
+    text-wrap: balance;
+  }
+
+  ::selection {
+    background: var(--color-accent);
+    color: #fff;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@layer components {
+  /* Card surface used across dashboard widgets */
+  .card {
+    @apply rounded-card border border-border bg-surface shadow-card;
+  }
+}
+
+/* Hide scrollbar utility for horizontal scrollers */
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
